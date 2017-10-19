@@ -16,60 +16,146 @@ export class DemoPage {
   private intervalMin: number = 5;
   private date: Date;
 
-  private deviceId: string;
-  private serviceUUID: string;
-  private characteristicUUID: string;
+  private device;
+  private devices: Array<any>;
+  private isConnected: boolean;
 
-  private isConnectedPromise: Promise<any>;
-  private readItemPromise: Promise<any>;
-  private writeIntervalPromise: Promise<any>;
+  private readItemObservable: Observable<any>;
 
-  constructor(public navCtrl: NavController, private ble: BLE) {
+  constructor(public navCtrl: NavController, private ble: BLE) 
+  {
     this.items = this.generateItems();
-
+    
     this.date = new Date();
     this.dateStr = this.formatDate(this.date);
 
-    this.isConnectedPromise = this.ble.isConnected(this.deviceId);
+    //Scan for BLE devices
+    this.ble.scan([], 5).subscribe(
+      device => { 
+          console.log("Device found, name: " + device.name + ", id: " + device.id);
+          if (device.name == "HC-06") {
+            this.connectToDevice(device);
+          }
+        },
 
-    this.readItemPromise = 
-      this.isConnectedPromise.then(isConnected => {
-          console.log("Is connected to: " + this.deviceId + " status: " + isConnected);
-          return this.ble.read(this.deviceId, this.serviceUUID, this.characteristicUUID);
-      }).catch(notConnected => {
-        console.log("Is not connected to: " + this.deviceId + " status: " + notConnected);
-        return Promise.reject("no connected is sad too bad");
-      });
-
-    this.readItemPromise.then( val => {
-      var readVal = this.bytesToString(val);
-      
-      console.log("readItemPromise: " + val);
-
-      this.items.push(
-        new DemoPage.Item(
-          new DemoPage.TimeStamp(this.date.getHours(), this.date.getMinutes()),
-          this.intervalMin
-        )
-      );
-
-    }).catch(err => {});
+      error => { 
+        console.log ("error while searching for devices: " + error);
+      }
+    );
   }
 
-  setInterval(intervalMin: number) {
+  onConnected(device){
+    this.isConnected = true;
+    this.readItemObservable = Observable.create(observer => {
+      console.log("Connected to: " + device.name + " device info: " + device);
+
+      for (let i = 0; i < device.characteristics.length(); i++){
+
+        if(device.characteristics[i].properties.indexOf("Read") > -1){
+
+          console.log("trying to read from device with \n" + 
+                      "serviceUUID: " + device.characteristics[i].service +
+                      "\ncharacteristicUUID: " + device.characteristics[i].characteristic +
+                      "\nproperties: " + device.characteristics[i].properties
+                      );
+          
+          while(this.isConnected){
+            setTimeout(function() {
+              let val = this.ble.read(
+                device.id, 
+                device.characteristics[i].service, 
+                device.characteristics[i].characteristic
+              );
+
+            observer.onNext(val);
+            }.bind(this), 5000); 
+          }
+        }
+      }
+    });
+
+    this.readItemObservable.subscribe(
+      val => {
+        this.onReadFromDevice(val);
+      },
+      
+      err => {
+        console.log(err);
+      }
+    );
+
+  }
+
+  onDisconnected(){
+    this.isConnected = false;
+  }
+
+  onReadFromDevice(val){
+    var readVal = this.bytesToString(val);
+
+    this.items.push(
+      new DemoPage.Item(
+        new DemoPage.TimeStamp(this.date.getHours(), this.date.getMinutes()),
+        this.intervalMin
+      )
+    );
+  }
+
+  connectToDevice(device: any) {
+    this.ble.connect(device.id).subscribe(
+      _device => { 
+        this.device = _device;
+        this.onConnected(_device)
+      },
+      error => { 
+        this.onDisconnected(); 
+      }
+    );
+  }
+
+  setInterval(intervalMin: number): Promise<any> {
     var val: ArrayBuffer = this.stringToBytes(intervalMin.toString());
 
-    this.isConnectedPromise.then(isConnected => {
-      this.writeIntervalPromise = this.ble.write(this.deviceId, this.serviceUUID, this.characteristicUUID, val);
+    return new Promise(function(resolve, reject){
+          let device = this.device;
 
-    }).catch(e => {
-      //inform user he's not connected.
-    });
+          if (this.isConnected){          
+            for (let i = 0; i < device.characteristics.length(); i++){
 
-    this.writeIntervalPromise.then(p => {
-      this.intervalMin = intervalMin;
-    });
+                if(device.characteristics[i].properties.indexOf("Write") > -1){
+
+                  console.log("trying to write to device with \n" + 
+                              "serviceUUID: " + device.characteristics[i].service +
+                              "\ncharacteristicUUID: " + device.characteristics[i].characteristic +
+                              "\nproperties: " + device.characteristics[i].properties
+                              );
+
+                  let resVal = this.ble.write(
+                      device.id, 
+                      device.characteristics[i].service, 
+                      device.characteristics[i].characteristic,
+                      val
+                    );
+
+                  resolve(resVal);
+                }
+            }
+
+            setTimeout(function() {
+            reject("setInterval function timed out," + 
+                                          "couldn't find any writable characteristics.");
+            }.bind(this), 5000);
+
+          } 
+          
+          else {
+            reject("Error in setInterval(): device not connected");
+          }
+
+    }.bind(this));
   }
+
+  
 
   public static Item = class {
     intervalMin;
