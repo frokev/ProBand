@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
-import { NavController, Platform, NavParams } from 'ionic-angular';
+import { NavController } from 'ionic-angular';
 import { BluetoothSerial } from '@ionic-native/bluetooth-serial';
-import {Observable} from 'rxjs/Observable';
+import { Observable, Subject } from 'rxjs';
 
 @Component({
   selector: 'page-about',
@@ -10,24 +10,25 @@ import {Observable} from 'rxjs/Observable';
 
 export class DemoPage {
 
-  public items: Array<any>;
+  private itemsSubject: Subject<Item[]> = new Subject();
+  private itemsObservable: Observable<Item[]> = this.itemsSubject;
+  private items: Item[];
+
   public dateStr: string;
 
-  private intervalMin: number = 5;
+  private intervalMin: number;
   private date: Date;
 
   private deviceUUID = ("98:d3:31:fb:72:1f").toUpperCase();
 
-  private isConnected: boolean;
 
-  private readItemObservable: Observable<any>;
+  constructor(public navCtrl: NavController, private bls: BluetoothSerial)
+  {
 
-  constructor(public navCtrl: NavController, private platform: Platform, private bls: BluetoothSerial) 
-  { 
-    this.items = this.generateItems(); 
-    
+    this.intervalMin = 5;
+    this.items = [];
     this.date = new Date();
-    this.dateStr = this.formatDate(this.date);
+    this.dateStr = DemoPage.formatDate(this.date);
 
     this.bls.enable().then(
       enabled => {
@@ -53,89 +54,72 @@ export class DemoPage {
       }
     );
 
-    this.bls.subscribe("delemitter").subscribe(
+
+    this.bls.subscribe("\n").subscribe(
       data => {
-        if (data != null) {
-          console.log("Data read: " + data);
-          this.onReadFromDevice(data);
-        }
+        console.log("Data read: " + data);
+        this.onReadFromDevice(data);
       },
       err => { console.log("error reading data: " + err); }
     );
 
-    
+    this.itemsObservable.subscribe( val => {
+      console.log(JSON.stringify(val));
+    });
+  }
 
+  getItems(): Observable<Array<any>> {
+    return this.itemsObservable.share();
   }
 
   onReadFromDevice(val){
-    var readVal = this.bytesToString(val);
+    let readVal = this.bytesToString(val);
+
+    this.date = new Date();
 
     this.items.push(
-      new DemoPage.Item(
-        new DemoPage.TimeStamp(this.date.getHours(), this.date.getMinutes()),
-        this.intervalMin 
+      new Item(
+
+        new TimeStamp(
+          this.date.getHours(),
+          this.date.getMinutes()
+        ),
+
+        this.intervalMin
       )
     );
+
+    this.itemsSubject.next(this.items);
   }
 
   setInterval(intervalMin: number) {
-    var val: ArrayBuffer = this.stringToBytes(intervalMin.toString());
+    let val: ArrayBuffer = this.stringToBytes(intervalMin.toString());
+    console.log("Trying to write data...");
+    this.bls.write(this.intervalMin + "\n").then(() => {
+      console.log("Interval changed to " + intervalMin);
 
-    this.bls.write(val);
+    }).catch(() => {
+      console.log("Could not write interval to device");
+    });
   }
 
-  
-
-  public static Item = class {
-    intervalMin;
-    timeStamp;
-    constructor(timeStamp, intervalMin: number){
-      this.intervalMin = intervalMin;
-      this.timeStamp = timeStamp;
-    }
+  static formatDate(date: Date) {
+    return date.getDate() + "-" + date.getMonth() + "-" + date.getFullYear();
   }
-
-  public static TimeStamp = class {
-    public hours;
-    public minutes;
-
-    time: string;
-
-    constructor(hours: number, minutes: number){
-      
-
-      let hStr = (hours < 10) ? '0' + hours : hours.toString();
-      let mStr = (minutes < 10) ? '0' + minutes : minutes.toString();
-
-      this.time = hStr + ':' + mStr;
-    }
-
-    public toString() {
-      return this.time;
-    }
-    
-  }
-
-  formatDate(date: Date) {
-    let dStr = date.getDate() + "-" + date.getMonth() + "-" + date.getFullYear();
-    return dStr;
-  } 
 
   //Generates a list of test Items
   generateItems() {
     let items = [];
 
     function getRandomItem(){
-      let retVal = new DemoPage.Item(
-
-        new DemoPage.TimeStamp(
-          Math.floor(Math.random() * 24) + 1, 
+      return new Item(
+        new TimeStamp(
+          Math.floor(Math.random() * 24) + 1,
           Math.floor(Math.random() * 60) + 1
         ),
 
         Math.floor((Math.random() * 10) + 1) * 5
       );
-      return retVal;
     }
 
     for (let i = 0; i < 10; i++){
@@ -147,17 +131,17 @@ export class DemoPage {
 
   dateLeftButton() {
     this.date.setDate(this.date.getDate()-1);
-    this.dateStr = this.formatDate(this.date);
+    this.dateStr = DemoPage.formatDate(this.date);
   }
   dateRightButton() {
     this.date.setDate(this.date.getDate()+1);
-    this.dateStr = this.formatDate(this.date);
+    this.dateStr = DemoPage.formatDate(this.date);
   }
 
   // ASCII only
-  stringToBytes(string) {
-    var array = new Uint8Array(string.length);
-    for (var i = 0, l = string.length; i < l; i++) {
+  stringToBytes = function(string) {
+    let array = new Uint8Array(string.length);
+    for (let i = 0, l = string.length; i < l; i++) {
         array[i] = string.charCodeAt(i);
       }
       return array.buffer;
@@ -168,4 +152,33 @@ export class DemoPage {
       return String.fromCharCode.apply(null, new Uint8Array(buffer));
   }
 
+}
+
+export class Item {
+  public IntervalMin: number;
+  public TimeStamp: TimeStamp;
+  constructor(timeStamp, intervalMin: number){
+    this.IntervalMin = intervalMin;
+    this.TimeStamp = timeStamp;
+  }
+}
+
+export class TimeStamp {
+  public hours;
+  public minutes;
+
+  time: string;
+
+  constructor(hours: number, minutes: number){
+
+
+    let hStr = (hours < 10) ? '0' + hours : hours.toString();
+    let mStr = (minutes < 10) ? '0' + minutes : minutes.toString();
+
+    this.time = hStr + ':' + mStr;
+  }
+
+  public toString() {
+    return this.time;
+  }
 }

@@ -12,7 +12,7 @@
         <ion-row justify-content-center>
 
             <button ion-button small icon-start (click) = "dateLeftButton()">
-              < 
+              <
             </button>
 
             <h2 class = "Text">{{dateStr}}</h2>
@@ -21,12 +21,12 @@
               >
             </button>
 
-        </ion-row> 
+        </ion-row>
   </ion-item>
 
   <ion-item>
     <ion-label>Interval in minutes</ion-label>
-    <ion-select [(ngModel)]="intervalMin">
+    <ion-select [(ngModel)]="intervalMin" (ngModelChange)="setInterval(intervalMin)">
       <ion-option value=5>5</ion-option>
       <ion-option value=15>15</ion-option>
       <ion-option value=30>30</ion-option>
@@ -35,9 +35,9 @@
   </ion-item>
 
   <ion-list>
-    <ion-item *ngFor="let item of items" class = "ProductivityItem">
-      <h3>{{item.timeStamp.toString()}}</h3>
-      <p>{{item.intervalMin}}</p>
+    <ion-item *ngFor="let item of itemsObservable | async">
+      <h3>{{item.TimeStamp.toString()}}</h3>
+      <p>{{item.IntervalMin}}</p>
     </ion-item>
   </ion-list>
 </ion-content>
