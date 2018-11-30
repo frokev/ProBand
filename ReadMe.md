@@ -7,3 +7,7 @@ Install Ionic CLI
 $ sudo npm install -g ionic cordova
 ```
 Then to run it, cd into the `ProbandLatest` folder
+
+```bash
+$ ionic serve
+```
